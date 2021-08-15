@@ -136,6 +136,20 @@ trait HasAttributes
     public static $encrypter;
 
     /**
+     * The list of accessor resolvers.
+     *
+     * @var array
+     */
+    protected static $getMutatorResolvers = [];
+
+    /**
+     * The list of mutator resolvers.
+     *
+     * @var array
+     */
+    protected static $setMutatorResolvers = [];
+
+    /**
      * Convert the model's attributes to an array.
      *
      * @return array
@@ -387,7 +401,8 @@ trait HasAttributes
         if (array_key_exists($key, $this->attributes) ||
             array_key_exists($key, $this->casts) ||
             $this->hasGetMutator($key) ||
-            $this->isClassCastable($key)) {
+            $this->isClassCastable($key) ||
+            $this->hasGetMutatorResolver($key)) {
             return $this->getAttributeValue($key);
         }
 
@@ -399,6 +414,17 @@ trait HasAttributes
         }
 
         return $this->getRelationValue($key);
+    }
+
+    /**
+     * Determine of there is a dynamic accessor for this attribute.
+     *
+     * @param string $key
+     * @return bool
+     */
+    public function hasGetMutatorResolver($key)
+    {
+        return isset(static::$getMutatorResolvers[$key]);
     }
 
     /**
@@ -771,6 +797,13 @@ trait HasAttributes
             return $this;
         }
 
+        // If the attribute has a dynamic set mutator resolver, we'll call that and
+        // return what it returns. This doesn't mean it will change the state of
+        // this model, as it can forward to other attributes or relationships.
+        if ($this->hasSetMutatorResolver($key)) {
+            return $this->setMutatedAttributeValueUsingResolver($key, $value);
+        }
+
         if (! is_null($value) && $this->isJsonCastable($key)) {
             $value = $this->castAttributeAsJson($key, $value);
         }
@@ -789,6 +822,29 @@ trait HasAttributes
         $this->attributes[$key] = $value;
 
         return $this;
+    }
+
+    /**
+     * Determines if a set dynamic mutator exists for an attribute.
+     *
+     * @param string $key
+     * @return bool
+     */
+    public function hasSetMutatorResolver($key)
+    {
+        return isset(static::$setMutatorResolvers[$key]);
+    }
+
+    /**
+     * Set the value of an attribute using its mutator resolver.
+     *
+     * @param string $key
+     * @param mixed $value
+     * @return mixed
+     */
+    public function setMutatedAttributeValueUsingResolver($key, $value)
+    {
+        return call_user_func_array(static::$setMutatorResolvers[$key], [$this, $value]);
     }
 
     /**
@@ -1687,6 +1743,13 @@ trait HasAttributes
             return $this->castAttribute($key, $value);
         }
 
+        // If the attribute exists whitin the list of dynamic get mutators, we will
+        // call that then return what it returns as the value, which is useful
+        // when you want be able register fields dynamically (via packages).
+        if ($this->hasGetMutatorResolver($key)) {
+            return $this->mutateAttributeViaResolver($key, $value);
+        }
+
         // If the attribute is listed as a date, we will convert it to a DateTime
         // instance on retrieval, which makes it quite convenient to work with
         // date fields without having to create a mutator for each property.
@@ -1696,6 +1759,18 @@ trait HasAttributes
         }
 
         return $value;
+    }
+
+    /**
+     * Get the value of an attribute using its get mutator resolver.
+     *
+     * @param string $key
+     * @param mixed $value
+     * @return mixed
+     */
+    public function mutateAttributeViaResolver($key, $value)
+    {
+        return call_user_func_array(static::$getMutatorResolvers[$key], [$this, $value]);
     }
 
     /**
@@ -1777,5 +1852,29 @@ trait HasAttributes
         preg_match_all('/(?<=^|;)get([^;]+?)Attribute(;|$)/', implode(';', get_class_methods($class)), $matches);
 
         return $matches[1];
+    }
+
+    /**
+     * Sets a dynamic accessor resolver.
+     *
+     * @param string $attribute
+     * @param callable $callable
+     * @return void
+     */
+    public static function resolveGetMutatorUsing($attribute, callable $callable)
+    {
+        static::$getMutatorResolvers[$attribute] = $callable;
+    }
+
+    /**
+     * Sets a dynamic mutator resolver.
+     *
+     * @param string $attribute
+     * @param callable $callable
+     * @return void
+     */
+    public static function resolveSetMutatorUsing($attribute, callable $callable)
+    {
+        static::$setMutatorResolvers[$attribute] = $callable;
     }
 }

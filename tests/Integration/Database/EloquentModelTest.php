@@ -27,6 +27,11 @@ class EloquentModelTest extends DatabaseTestCase
             $table->string('name');
             $table->string('title');
         });
+
+        Schema::create('test_model3', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('name');
+        });
     }
 
     public function testUserCanUpdateNullableDate()
@@ -69,6 +74,41 @@ class EloquentModelTest extends DatabaseTestCase
         $this->assertTrue($user->wasChanged());
         $this->assertTrue($user->wasChanged('name'));
     }
+
+    public function testCustomAccessorUsingResolver()
+    {
+        $number = 1;
+
+        TestModel3::resolveGetMutatorUsing('name_incremented', function ($model) use (&$number) {
+            return $model->name . '.' . $number++;
+        });
+
+        $model = TestModel3::create([
+            'name' => 'lorem',
+        ]);
+
+        $this->assertEquals('lorem.1', $model->name_incremented);
+        $this->assertEquals('lorem.2', $model->name_incremented);
+    }
+
+    public function testCustomMutatorUsingResolver()
+    {
+        $number = 1;
+
+        TestModel3::resolveSetMutatorUsing('name_incrementing', function ($model, $value) use (&$number) {
+            $model->name = $value . '.' . $number++;
+        });
+
+        $model = TestModel3::create([
+            'name' => 'old val',
+        ]);
+
+        $model->update(['name_incrementing' => 'ipsum']);
+        $this->assertEquals('ipsum.1', $model->name);
+
+        $model->update(['name_incrementing' => 'lorem']);
+        $this->assertEquals('lorem.2', $model->name);
+    }
 }
 
 class TestModel1 extends Model
@@ -82,6 +122,13 @@ class TestModel1 extends Model
 class TestModel2 extends Model
 {
     public $table = 'test_model2';
+    public $timestamps = false;
+    protected $guarded = [];
+}
+
+class TestModel3 extends Model
+{
+    public $table = 'test_model3';
     public $timestamps = false;
     protected $guarded = [];
 }
