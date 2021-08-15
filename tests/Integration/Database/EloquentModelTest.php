@@ -109,6 +109,28 @@ class EloquentModelTest extends DatabaseTestCase
         $model->update(['name_incrementing' => 'lorem']);
         $this->assertEquals('lorem.2', $model->name);
     }
+
+    public function testSetMutatorDoesntMakeTheModelDirty()
+    {
+        $called = false;
+
+        TestModel3::resolveSetMutatorUsing('name_incrementing', function ($model, $value) use (&$called) {
+            // Does nothing, so the model state does not change.
+            $called = true;
+        });
+
+        $model = TestModel3::create([
+            'name' => 'old val',
+        ])->fresh();
+
+        $this->assertFalse($called);
+
+        $model->fill(['name_incrementing' => 'something else']);
+
+        $this->assertTrue($called);
+        $this->assertFalse($model->isDirty());
+        $this->assertEquals('old val', $model->name);
+    }
 }
 
 class TestModel1 extends Model
